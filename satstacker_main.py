@@ -1,6 +1,7 @@
 # Copyright (c) 2026 Penta0308
 import glob
 import os
+import shutil
 from datetime import datetime
 import subprocess
 
@@ -73,26 +74,32 @@ def takevideoandmaketrf(work_dir: str, time_start: str, time_dur: str, inputf_na
     print("# 2   Succeeded.")
     return trf_path
 
-def takevideoanddeshakeandexportimage(work_dir: str, time_start: str, time_dur: str, inputf_name:str) -> str:
+def takevideoanddeshakeandexportimage(work_dir: str, time_start: str, time_dur: str, inputf_name:str, trf_path:str) -> str:
     print("# 3   Processing Frames.")
-    frames_dir = f"{work_dir}/frames/"
+    frames_dir = f"{work_dir}frames/"
     os.makedirs(frames_dir, exist_ok=True)
 
     image_out_pattern = os.path.join(frames_dir, "frame_%04d.tif")
     subprocess.run([
         'ffmpeg', '-y',
-        #'-v', 'error',
-        #'-v', 'debug',
+        '-v', 'error',
         '-ss', time_start, '-t', time_dur, '-i', inputf_name,
         '-vf', (
             f"negate,vidstabtransform=optzoom=0:tripod=1:crop=black:input={trf_path},negate,format=rgb48"
-            #",unsharp=5:5:0.8:3:3:0.4"
         ),
         '-pix_fmt', 'rgb48le',
         image_out_pattern], check=True)
 
     print("# 3   Succeeded.")
     return frames_dir
+
+def cleanup_workspace(work_dir: str):
+    print("# 5   Cleaning up temporary files.")
+    try:
+        shutil.rmtree(work_dir)
+        print("# 5   Succeeded.")
+    except Exception as e:
+        print(f"# 5   Failed to clean up workspace: {e}")
 
 if __name__ == "__main__":
     inputf_name = input("?     Drag video file here [path]: ").strip().replace("'", "").replace('"', "")
@@ -105,11 +112,14 @@ if __name__ == "__main__":
 
     trf_path = takevideoandmaketrf(work_dir, time_start, time_dur, inputf_name)
 
-    frames_dir = takevideoanddeshakeandexportimage(work_dir, time_start, time_dur, inputf_name)
+    # trf_path parameter
+    frames_dir = takevideoanddeshakeandexportimage(work_dir, time_start, time_dur, inputf_name, trf_path)
 
     sat_sigma = input("?     Threshold for Satellite detection. Negative for darker than background(moon, etc.). Default -3.0 [float] SD: ")
     if sat_sigma == "":
         sat_sigma = -3.0
+    else:
+        sat_sigma = float(sat_sigma)
 
     result_image = lab_median_stacking(frames_dir, sat_sigma)
 
@@ -119,5 +129,6 @@ if __name__ == "__main__":
 
     if success:
         print(f"#     Successfully saved 16-bit image to: {output_filename}")
+        cleanup_workspace(work_dir) # cleanup for memory!
     else:
-        print("#     Failed to save the image.")
+        print("#     Failed to save the image. Temporary files are kept for debugging.")
